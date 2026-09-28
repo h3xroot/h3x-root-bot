@@ -1,12 +1,15 @@
-﻿# h3x.root verification bot
-# New members see only START HERE until verification.
-
-import os
+﻿import os
 import json
 import discord
+
 from discord.ext import commands
 from discord.ui import View, Button
 from dotenv import load_dotenv
+
+
+# ============================================================
+# ENVIRONMENT
+# ============================================================
 
 load_dotenv()
 
@@ -14,19 +17,37 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 if not TOKEN or not GUILD_ID:
-    raise RuntimeError("Set DISCORD_TOKEN and GUILD_ID in the environment variables.")
+    raise RuntimeError(
+        "Set DISCORD_TOKEN and GUILD_ID in the environment variables."
+    )
+
+
+# ============================================================
+# INTENTS
+# ============================================================
 
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
 
+# ============================================================
+# SERVER SETTINGS
+# ============================================================
+
 VERIFIED_ROLE = "✅ Verified"
 
 START_CATEGORY = "📌 START HERE"
-VERIFY_CHANNEL = "🔐・verification"
+
 WELCOME_CHANNEL = "👋・welcome"
 RULES_CHANNEL = "📜・rules"
+VERIFY_CHANNEL = "🔐・verification"
+
+LOG_CATEGORY = "📊 MEMBER LOGS"
+
+JOIN_LOG_CHANNEL = "🟢・member-joined"
+LEAVE_LOG_CHANNEL = "🔴・member-left"
+
 
 STAFF_ROLES = {
     "👑 Owner",
@@ -35,6 +56,7 @@ STAFF_ROLES = {
     "🎓 Mentor",
     "🔬 Researcher",
 }
+
 
 CONTENT_CATEGORIES = {
     "💬 COMMUNITY",
@@ -47,11 +69,19 @@ CONTENT_CATEGORIES = {
 
 
 # ============================================================
-# SEQUENTIAL SERVER NAMES
+# SEQUENTIAL PRIVATE SERVER NAMES
+# h3x-A01 -> h3x-A99 -> h3x-B01 -> ... -> h3x-Z99
 # ============================================================
 
-DATA_DIR = os.path.join(os.getcwd(), "data")
-os.makedirs(DATA_DIR, exist_ok=True)
+DATA_DIR = os.path.join(
+    os.getcwd(),
+    "data"
+)
+
+os.makedirs(
+    DATA_DIR,
+    exist_ok=True
+)
 
 SEQUENCE_FILE = os.path.join(
     DATA_DIR,
@@ -59,7 +89,7 @@ SEQUENCE_FILE = os.path.join(
 )
 
 
-def generate_names():
+def generate_server_names():
 
     names = []
 
@@ -74,7 +104,7 @@ def generate_names():
     return names
 
 
-ALL_NAMES = generate_names()
+ALL_SERVER_NAMES = generate_server_names()
 
 
 def load_sequence():
@@ -89,8 +119,14 @@ def load_sequence():
 
             data = json.load(file)
 
-        return int(
-            data.get("next_index", 0)
+        return max(
+            0,
+            int(
+                data.get(
+                    "next_index",
+                    0
+                )
+            )
         )
 
     except (
@@ -105,38 +141,42 @@ def load_sequence():
 
 def save_sequence(index):
 
-    temp_file = SEQUENCE_FILE + ".tmp"
+    temporary_file = SEQUENCE_FILE + ".tmp"
 
     with open(
-        temp_file,
+        temporary_file,
         "w",
         encoding="utf-8"
     ) as file:
 
         json.dump(
-            {"next_index": index},
+            {
+                "next_index": index
+            },
             file,
             indent=2
         )
 
     os.replace(
-        temp_file,
+        temporary_file,
         SEQUENCE_FILE
     )
 
 
-def get_next_name(guild):
+def get_next_server_name(guild):
 
     index = load_sequence()
 
-    while index < len(ALL_NAMES):
+    while index < len(ALL_SERVER_NAMES):
 
-        nickname = ALL_NAMES[index]
+        nickname = ALL_SERVER_NAMES[index]
 
         index += 1
 
         save_sequence(index)
 
+        # Don't give the same nickname to somebody
+        # who is currently using it.
         if not discord.utils.get(
             guild.members,
             nick=nickname
@@ -185,15 +225,17 @@ class VerifyView(View):
             return
 
 
-        role = discord.utils.get(
+        verified_role = discord.utils.get(
             guild.roles,
             name=VERIFIED_ROLE
         )
 
-        if role is None:
+
+        if verified_role is None:
 
             await interaction.response.send_message(
-                "Verification is currently unavailable. Contact staff.",
+                "Verification is temporarily unavailable. "
+                "Please contact staff.",
                 ephemeral=True
             )
 
@@ -202,24 +244,33 @@ class VerifyView(View):
 
         try:
 
-            # Give verified role.
-            if role not in member.roles:
+            # ------------------------------------------------
+            # GIVE VERIFIED ROLE
+            # ------------------------------------------------
+
+            if verified_role not in member.roles:
 
                 await member.add_roles(
-                    role,
+                    verified_role,
                     reason="h3x.root verification"
                 )
 
 
-            # Give sequential private server nickname.
-            nick = member.nick
+            # ------------------------------------------------
+            # ASSIGN PRIVATE SERVER NAME
+            # ------------------------------------------------
+
+            nickname = member.nick
+
 
             if not (
-                nick
-                and nick.startswith("h3x-")
+                nickname
+                and nickname.startswith("h3x-")
             ):
 
-                new_name = get_next_name(guild)
+                new_name = get_next_server_name(
+                    guild
+                )
 
                 if new_name:
 
@@ -230,18 +281,22 @@ class VerifyView(View):
                             reason="h3x.root privacy nickname"
                         )
 
-                        nick = new_name
+                        nickname = new_name
 
                     except discord.Forbidden:
 
-                        pass
+                        nickname = None
 
 
-            if nick:
+            # ------------------------------------------------
+            # RESPONSE
+            # ------------------------------------------------
+
+            if nickname:
 
                 message = (
                     "✅ **Verification complete!**\n\n"
-                    f"Your private server name is **`{nick}`**.\n\n"
+                    f"Your private server name is **`{nickname}`**.\n\n"
                     "Your server nickname is independent from "
                     "your Discord account ID.\n\n"
                     "The main h3x.root channels are now unlocked."
@@ -251,8 +306,8 @@ class VerifyView(View):
 
                 message = (
                     "✅ **Verification complete!**\n\n"
-                    "Your Verified role was assigned, but I "
-                    "couldn't change your nickname.\n\n"
+                    "Your Verified role has been assigned.\n\n"
+                    "I couldn't change your server nickname. "
                     "Please contact staff."
                 )
 
@@ -268,7 +323,8 @@ class VerifyView(View):
             if not interaction.response.is_done():
 
                 await interaction.response.send_message(
-                    "I don't have enough permissions to verify you.",
+                    "I don't have enough permissions to complete "
+                    "verification. Please contact staff.",
                     ephemeral=True
                 )
 
@@ -276,7 +332,8 @@ class VerifyView(View):
         except Exception as error:
 
             print(
-                f"Verification error: {type(error).__name__}: {error}"
+                f"Verification error: "
+                f"{type(error).__name__}: {error}"
             )
 
             if not interaction.response.is_done():
@@ -295,6 +352,7 @@ class H3xBot(commands.Bot):
 
     async def setup_hook(self):
 
+        # Persistent verification button.
         self.add_view(
             VerifyView()
         )
@@ -308,59 +366,67 @@ bot = H3xBot(
 
 
 # ============================================================
-# ROLE
+# ROLE CREATION
 # ============================================================
 
-async def get_or_create_role(
-    guild,
-    name
-):
+async def get_or_create_verified_role(guild):
 
     role = discord.utils.get(
         guild.roles,
-        name=name
+        name=VERIFIED_ROLE
     )
 
     if role:
 
         return role
 
+
     return await guild.create_role(
-        name=name,
+        name=VERIFIED_ROLE,
         colour=discord.Colour.green(),
         reason="h3x.root verification setup"
     )
 
 
 # ============================================================
-# SERVER PERMISSIONS
+# STAFF CHECK
 # ============================================================
 
-async def setup_permissions(guild):
+def member_is_staff(member):
+
+    if member.guild_permissions.administrator:
+
+        return True
+
+    return any(
+        role.name in STAFF_ROLES
+        for role in member.roles
+    )
+
+
+# ============================================================
+# START HERE SETUP
+# ============================================================
+
+async def setup_start_here(guild):
 
     everyone = guild.default_role
 
-    verified = discord.utils.get(
+    verified_role = discord.utils.get(
         guild.roles,
         name=VERIFIED_ROLE
     )
 
-    if verified is None:
-
-        verified = await get_or_create_role(
-            guild,
-            VERIFIED_ROLE
-        )
-
 
     # --------------------------------------------------------
-    # START HERE
+    # CATEGORY
     # --------------------------------------------------------
 
     start = discord.utils.get(
         guild.categories,
         name=START_CATEGORY
     )
+
 
     if start is None:
 
@@ -370,10 +436,7 @@ async def setup_permissions(guild):
         )
 
 
-    # --------------------------------------------------------
-    # ONLY START HERE IS VISIBLE TO @everyone
-    # --------------------------------------------------------
-
+    # New/unverified members can see this category.
     await start.set_permissions(
         everyone,
         view_channel=True,
@@ -381,99 +444,15 @@ async def setup_permissions(guild):
         read_message_history=True
     )
 
-    await start.set_permissions(
-        verified,
-        view_channel=True,
-        send_messages=False,
-        read_message_history=True
-    )
 
+    if verified_role:
 
-    # --------------------------------------------------------
-    # ALL OTHER CATEGORIES ARE HIDDEN BEFORE VERIFICATION
-    # --------------------------------------------------------
-
-    for category_name in CONTENT_CATEGORIES:
-
-        category = discord.utils.get(
-            guild.categories,
-            name=category_name
-        )
-
-        if not category:
-            continue
-
-
-        # Completely hide from unverified members.
-        await category.set_permissions(
-            everyone,
-            view_channel=False,
-            send_messages=False,
-            read_message_history=False
-        )
-
-
-        # Verified members can access it.
-        await category.set_permissions(
-            verified,
+        await start.set_permissions(
+            verified_role,
             view_channel=True,
-            send_messages=True,
-            read_message_history=True,
-            create_public_threads=True,
-            embed_links=True,
-            attach_files=True,
-            add_reactions=True
+            send_messages=False,
+            read_message_history=True
         )
-
-
-        # Staff access.
-        for role_name in STAFF_ROLES:
-
-            staff_role = discord.utils.get(
-                guild.roles,
-                name=role_name
-            )
-
-            if staff_role:
-
-                await category.set_permissions(
-                    staff_role,
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True
-                )
-
-
-    print(
-        "Private verification gate configured."
-    )
-
-
-# ============================================================
-# START HERE CHANNELS
-# ============================================================
-
-async def setup_start_channels(guild):
-
-    start = discord.utils.get(
-        guild.categories,
-        name=START_CATEGORY
-    )
-
-    if start is None:
-
-        start = await guild.create_category(
-            START_CATEGORY,
-            reason="h3x.root setup"
-        )
-
-
-    everyone = guild.default_role
-
-    verified = discord.utils.get(
-        guild.roles,
-        name=VERIFIED_ROLE
-    )
 
 
     # --------------------------------------------------------
@@ -481,16 +460,17 @@ async def setup_start_channels(guild):
     # --------------------------------------------------------
 
     welcome = discord.utils.get(
-        start.channels,
+        start.text_channels,
         name=WELCOME_CHANNEL
     )
+
 
     if welcome is None:
 
         welcome = await guild.create_text_channel(
             WELCOME_CHANNEL,
             category=start,
-            reason="h3x.root welcome"
+            reason="h3x.root welcome channel"
         )
 
 
@@ -501,31 +481,23 @@ async def setup_start_channels(guild):
         read_message_history=True
     )
 
-    if verified:
-
-        await welcome.set_permissions(
-            verified,
-            view_channel=True,
-            send_messages=False,
-            read_message_history=True
-        )
-
 
     # --------------------------------------------------------
     # RULES
     # --------------------------------------------------------
 
     rules = discord.utils.get(
-        start.channels,
+        start.text_channels,
         name=RULES_CHANNEL
     )
+
 
     if rules is None:
 
         rules = await guild.create_text_channel(
             RULES_CHANNEL,
             category=start,
-            reason="h3x.root rules"
+            reason="h3x.root rules channel"
         )
 
 
@@ -536,31 +508,23 @@ async def setup_start_channels(guild):
         read_message_history=True
     )
 
-    if verified:
-
-        await rules.set_permissions(
-            verified,
-            view_channel=True,
-            send_messages=False,
-            read_message_history=True
-        )
-
 
     # --------------------------------------------------------
     # VERIFICATION
     # --------------------------------------------------------
 
     verification = discord.utils.get(
-        start.channels,
+        start.text_channels,
         name=VERIFY_CHANNEL
     )
+
 
     if verification is None:
 
         verification = await guild.create_text_channel(
             VERIFY_CHANNEL,
             category=start,
-            reason="h3x.root verification"
+            reason="h3x.root verification channel"
         )
 
 
@@ -571,10 +535,11 @@ async def setup_start_channels(guild):
         read_message_history=True
     )
 
-    if verified:
+
+    if verified_role:
 
         await verification.set_permissions(
-            verified,
+            verified_role,
             view_channel=True,
             send_messages=False,
             read_message_history=True
@@ -582,10 +547,11 @@ async def setup_start_channels(guild):
 
 
     # --------------------------------------------------------
-    # SEND VERIFICATION PANEL
+    # VERIFICATION PANEL
     # --------------------------------------------------------
 
-    found = False
+    panel_exists = False
+
 
     try:
 
@@ -599,7 +565,8 @@ async def setup_start_channels(guild):
                 and "h3x.root verification" in message.content
             ):
 
-                found = True
+                panel_exists = True
+
                 break
 
     except discord.Forbidden:
@@ -607,7 +574,7 @@ async def setup_start_channels(guild):
         pass
 
 
-    if not found:
+    if not panel_exists:
 
         await verification.send(
 
@@ -632,6 +599,217 @@ async def setup_start_channels(guild):
 
 
 # ============================================================
+# MAIN SERVER PERMISSIONS
+# ============================================================
+
+async def setup_main_server_permissions(guild):
+
+    everyone = guild.default_role
+
+    verified_role = discord.utils.get(
+        guild.roles,
+        name=VERIFIED_ROLE
+    )
+
+
+    if verified_role is None:
+
+        verified_role = await get_or_create_verified_role(
+            guild
+        )
+
+
+    # --------------------------------------------------------
+    # HIDE ALL MAIN CATEGORIES FROM UNVERIFIED USERS
+    # --------------------------------------------------------
+
+    for category_name in CONTENT_CATEGORIES:
+
+        category = discord.utils.get(
+            guild.categories,
+            name=category_name
+        )
+
+
+        if category is None:
+
+            continue
+
+
+        # Unverified members:
+        # completely hidden.
+        await category.set_permissions(
+            everyone,
+            view_channel=False,
+            send_messages=False,
+            read_message_history=False
+        )
+
+
+        # Verified members:
+        # normal access.
+        await category.set_permissions(
+            verified_role,
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            create_public_threads=True,
+            embed_links=True,
+            attach_files=True,
+            add_reactions=True
+        )
+
+
+        # Staff:
+        # keep access even when unverified.
+        for staff_role_name in STAFF_ROLES:
+
+            staff_role = discord.utils.get(
+                guild.roles,
+                name=staff_role_name
+            )
+
+
+            if staff_role:
+
+                await category.set_permissions(
+                    staff_role,
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True
+                )
+
+
+    print(
+        "Main server categories locked until verification."
+    )
+
+
+# ============================================================
+# MEMBER LOG SETUP
+# ============================================================
+
+async def setup_member_logs(guild):
+
+    everyone = guild.default_role
+
+    verified_role = discord.utils.get(
+        guild.roles,
+        name=VERIFIED_ROLE
+    )
+
+
+    # --------------------------------------------------------
+    # LOG CATEGORY
+    # --------------------------------------------------------
+
+    log_category = discord.utils.get(
+        guild.categories,
+        name=LOG_CATEGORY
+    )
+
+
+    if log_category is None:
+
+        log_category = await guild.create_category(
+            LOG_CATEGORY,
+            reason="h3x.root member logs"
+        )
+
+
+    # --------------------------------------------------------
+    # HIDE CATEGORY FROM EVERYONE
+    # --------------------------------------------------------
+
+    await log_category.set_permissions(
+        everyone,
+        view_channel=False,
+        send_messages=False,
+        read_message_history=False
+    )
+
+
+    # --------------------------------------------------------
+    # STAFF ACCESS
+    # --------------------------------------------------------
+
+    for role_name in STAFF_ROLES:
+
+        role = discord.utils.get(
+            guild.roles,
+            name=role_name
+        )
+
+        if role:
+
+            await log_category.set_permissions(
+                role,
+                view_channel=True,
+                send_messages=False,
+                read_message_history=True
+            )
+
+
+    # --------------------------------------------------------
+    # JOIN LOG
+    # --------------------------------------------------------
+
+    join_channel = discord.utils.get(
+        log_category.text_channels,
+        name=JOIN_LOG_CHANNEL
+    )
+
+
+    if join_channel is None:
+
+        join_channel = await guild.create_text_channel(
+            JOIN_LOG_CHANNEL,
+            category=log_category,
+            reason="h3x.root join logs"
+        )
+
+
+    await join_channel.set_permissions(
+        everyone,
+        view_channel=False,
+        send_messages=False,
+        read_message_history=False
+    )
+
+
+    # --------------------------------------------------------
+    # LEAVE LOG
+    # --------------------------------------------------------
+
+    leave_channel = discord.utils.get(
+        log_category.text_channels,
+        name=LEAVE_LOG_CHANNEL
+    )
+
+
+    if leave_channel is None:
+
+        leave_channel = await guild.create_text_channel(
+            LEAVE_LOG_CHANNEL,
+            category=log_category,
+            reason="h3x.root leave logs"
+        )
+
+
+    await leave_channel.set_permissions(
+        everyone,
+        view_channel=False,
+        send_messages=False,
+        read_message_history=False
+    )
+
+
+    print(
+        "Member logs configured."
+    )
+
+
+# ============================================================
 # READY
 # ============================================================
 
@@ -642,10 +820,12 @@ async def on_ready():
         GUILD_ID
     )
 
+
     if guild is None:
 
         print(
-            "ERROR: Server not found. Check GUILD_ID."
+            "ERROR: Server not found. "
+            "Check GUILD_ID."
         )
 
         return
@@ -658,12 +838,25 @@ async def on_ready():
 
     try:
 
-        await setup_start_channels(
+        await get_or_create_verified_role(
             guild
         )
 
-        await setup_permissions(
+        await setup_start_here(
             guild
+        )
+
+        await setup_main_server_permissions(
+            guild
+        )
+
+        await setup_member_logs(
+            guild
+        )
+
+
+        print(
+            "=========================================="
         )
 
         print(
@@ -671,12 +864,32 @@ async def on_ready():
         )
 
         print(
-            "Before verification: START HERE only."
+            "New members see START HERE only."
         )
 
         print(
-            "After verification: main server unlocked."
+            "Verification unlocks the main server."
         )
+
+        print(
+            "Sequential names: h3x-A01 -> h3x-Z99"
+        )
+
+        print(
+            "Member join/leave logging enabled."
+        )
+
+        print(
+            "=========================================="
+        )
+
+
+    except discord.Forbidden as error:
+
+        print(
+            f"Discord permission error: {error}"
+        )
+
 
     except Exception as error:
 
@@ -686,7 +899,7 @@ async def on_ready():
 
 
 # ============================================================
-# NEW MEMBER
+# MEMBER JOIN
 # ============================================================
 
 @bot.event
@@ -697,27 +910,35 @@ async def on_member_join(member):
         return
 
 
+    guild = member.guild
+
+
+    # --------------------------------------------------------
+    # PRIVATE SERVER NICKNAME
+    # --------------------------------------------------------
+
     try:
 
-        # Assign private sequential name immediately.
         if not (
             member.nick
             and member.nick.startswith("h3x-")
         ):
 
-            nick = get_next_name(
-                member.guild
+            nickname = get_next_server_name(
+                guild
             )
 
-            if nick:
+
+            if nickname:
 
                 await member.edit(
-                    nick=nick,
+                    nick=nickname,
                     reason="h3x.root privacy nickname"
                 )
 
                 print(
-                    f"Assigned {nick} to member {member.id}"
+                    f"Assigned {nickname} to member "
+                    f"{member.id}"
                 )
 
     except discord.Forbidden:
@@ -731,6 +952,139 @@ async def on_member_join(member):
 
         print(
             f"Nickname assignment failed: {error}"
+        )
+
+
+    # --------------------------------------------------------
+    # JOIN LOG
+    # --------------------------------------------------------
+
+    try:
+
+        log_category = discord.utils.get(
+            guild.categories,
+            name=LOG_CATEGORY
+        )
+
+
+        if log_category is None:
+
+            return
+
+
+        channel = discord.utils.get(
+            log_category.text_channels,
+            name=JOIN_LOG_CHANNEL
+        )
+
+
+        if channel is None:
+
+            return
+
+
+        embed = discord.Embed(
+            title="🟢 Member Joined",
+            description=(
+                f"**Server name:** "
+                f"`{member.nick or 'Not assigned'}`\n\n"
+                f"**Account created:** "
+                f"<t:{int(member.created_at.timestamp())}:F>\n\n"
+                f"**Member count:** "
+                f"`{guild.member_count}`"
+            ),
+            colour=discord.Colour.green(),
+            timestamp=discord.utils.utcnow()
+        )
+
+
+        embed.set_footer(
+            text="h3x.root member logs"
+        )
+
+
+        await channel.send(
+            embed=embed
+        )
+
+
+    except Exception as error:
+
+        print(
+            f"Join log error: "
+            f"{type(error).__name__}: {error}"
+        )
+
+
+# ============================================================
+# MEMBER LEAVE
+# ============================================================
+
+@bot.event
+async def on_member_remove(member):
+
+    if member.guild.id != GUILD_ID:
+
+        return
+
+
+    guild = member.guild
+
+
+    try:
+
+        log_category = discord.utils.get(
+            guild.categories,
+            name=LOG_CATEGORY
+        )
+
+
+        if log_category is None:
+
+            return
+
+
+        channel = discord.utils.get(
+            log_category.text_channels,
+            name=LEAVE_LOG_CHANNEL
+        )
+
+
+        if channel is None:
+
+            return
+
+
+        embed = discord.Embed(
+            title="🔴 Member Left",
+            description=(
+                f"**Server name:** "
+                f"`{member.nick or 'Not assigned'}`\n\n"
+                f"**Joined Discord:** "
+                f"<t:{int(member.created_at.timestamp())}:F>\n\n"
+                f"**Member count:** "
+                f"`{guild.member_count}`"
+            ),
+            colour=discord.Colour.red(),
+            timestamp=discord.utils.utcnow()
+        )
+
+
+        embed.set_footer(
+            text="h3x.root member logs"
+        )
+
+
+        await channel.send(
+            embed=embed
+        )
+
+
+    except Exception as error:
+
+        print(
+            f"Leave log error: "
+            f"{type(error).__name__}: {error}"
         )
 
 
