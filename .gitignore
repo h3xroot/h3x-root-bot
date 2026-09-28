@@ -1,0 +1,5 @@
+﻿.env
+__pycache__/
+*.pyc
+server_nicknames.json
+bot_backup.py
